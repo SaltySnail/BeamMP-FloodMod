@@ -158,7 +158,7 @@ function T_Update()
                 print("Auto wait time over, resuming flood")
                 waitingForAuto = false
             else
-                if math.floor(time) ~= math.floor(time - 0.1) and time - startAutoWaitTime >= autoWaitTime - 5 then
+                if math.floor(time) ~= math.floor(time - 0.025) and time - startAutoWaitTime >= autoWaitTime - 5 then
                     MP.hSendChatMessage(-1, "Flood starts in " .. tostring(math.ceil(autoWaitTime - (time - startAutoWaitTime))) .. " seconds!")
                     level = resetAt -- keep resetting flood to beginning so people can set up
                 end
