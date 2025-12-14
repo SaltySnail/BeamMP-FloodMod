@@ -6,13 +6,16 @@ M.options = {
     oceanLevel = 0.0,
     floodSpeed = 0.001,
     limit = 0.0,
+    resetAt = 0.0,
     limitEnabled = false,
     enabled = false,
     decrease = false,
-    resetAt = 0.0, -- Doesn't reset everything, just the ocean level. Will be used for automatic flooding
     rainAmount = 0.0,
     rainVolume = -1.0, -- -1.0 = automatic, 0.0 = off, 1.0 = max
-    floodWithRain = true
+    floodWithRain = true,
+    auto = false,
+    autoWaitTime = 60,
+    playersUnderWaterWaitTime = 5
 }
 
 M.isOceanValid = false
@@ -20,6 +23,25 @@ M.initialLevel = 0.0
 M.commands = {}
 
 local invalidCount = 0
+local time = 0 -- seconds
+local startAutoWaitTime = 0
+local waitingForAuto = false
+local playersUnderWater = {}
+local waitingForPlayersUnderWater = false
+local startPlayersUnderWaterTime = 0
+
+local function dump(tbl)
+    local result = "{ "
+    for k, v in pairs(tbl) do
+        if type(v) == "table" then
+            result = result .. k .. " = " .. dump(v) .. ", "
+        else
+            result = result .. k .. " = " .. tostring(v) .. ", "
+        end
+    end
+    result = result .. " }"
+    return result
+end
 
 function onPlayerJoin(pid)
     local success = MP.TriggerClientEvent(pid, "E_OnPlayerLoaded", "")
@@ -54,14 +76,32 @@ local function setWaterLevel(level)
     MP.TriggerClientEvent(-1, "E_SetWaterLevel", tostring(level))
 end
 
+function E_OnPlayerUnderWater(pid)
+    if not M.options.auto or waitingForPlayersUnderWater then return end
+    playersUnderWater[pid] = true
+    -- print("playersUnderWater: " .. dump(playersUnderWater) .. " total players: " .. dump(MP.GetPlayers()))
+    for p, player in pairs(MP.GetPlayers()) do
+        if not playersUnderWater[p] then
+            return
+        end
+    end
+    startPlayersUnderWaterTime = time
+    waitingForPlayersUnderWater = true
+end
+
 function T_Update()
+    time = time + 0.025
     if not M.isOceanValid or not M.options.enabled then return end
 
     local level = M.options.oceanLevel
     local changeAmount = M.options.floodSpeed
+    local speed = M.options.floodSpeed
     local limit = M.options.limit
     local limitEnabled = M.options.limitEnabled
     local decrease = M.options.decrease
+    local auto = M.options.auto
+    local autoWaitTime = M.options.autoWaitTime
+    local resetAt = M.options.resetAt
 
     -- If we have rain, add the rain amount to the change amount. The flood speed will now act as a multiplier.
     if M.floodWithRain then
@@ -71,29 +111,57 @@ function T_Update()
         end
     end
 
-    -- Increase or decrease the level
-    if decrease then
-        level = level - changeAmount
-    else
-        level = level + changeAmount
-    end
-
-    -- Reset at (0 = disabled)
-    if M.options.resetAt > 0.0 and level >= M.options.resetAt then
-        level = M.initialLevel
-    elseif M.options.resetAt < 0.0 and level <= M.options.resetAt then
-        level = M.initialLevel
-    end
-
-    -- Limit the level
+    -- Check if we can change the level
+    local canChange = true
     if limitEnabled then
         if decrease then
-            if level < limit then
-                level = limit
+            if level - speed < limit then
+                canChange = false
             end
         else
-            if level > limit then
-                level = limit
+            if level + speed > limit then
+                canChange = false
+            end
+        end
+    end
+
+    if auto and waitingForAuto then
+        canChange = false
+    end
+    if auto and waitingForPlayersUnderWater then
+        if time - startPlayersUnderWaterTime >= M.options.playersUnderWaterWaitTime then
+            MP.hSendChatMessage(-1, "All players are underwater, resetting flood!")
+            waitingForPlayersUnderWater = false
+            canChange = false
+            playersUnderWater = {}
+        end
+    end
+
+    if canChange then
+        if decrease then
+            level = level - speed
+        else
+            level = level + speed
+        end
+    else
+        if not waitingForAuto and auto then
+            MP.hSendChatMessage(-1, "Flood starts in " .. tostring(autoWaitTime) .. " seconds, get ready!")
+            waitingForAuto = true
+            startAutoWaitTime = time
+            level = resetAt -- reset flood to beginning so people can set up
+            playersUnderWater = {}
+        end
+        if waitingForAuto then
+            playersUnderWater = {}
+            if time - startAutoWaitTime >= autoWaitTime then
+                MP.hSendChatMessage(-1, "Flood started!")
+                print("Auto wait time over, resuming flood")
+                waitingForAuto = false
+            else
+                if math.floor(time) ~= math.floor(time - 0.1) and time - startAutoWaitTime >= autoWaitTime - 5 then
+                    MP.hSendChatMessage(-1, "Flood starts in " .. tostring(math.ceil(autoWaitTime - (time - startAutoWaitTime))) .. " seconds!")
+                    level = resetAt -- keep resetting flood to beginning so people can set up
+                end
             end
         end
     end
@@ -120,6 +188,7 @@ function E_OnInitialize(pid, waterLevel)
     if M.initialLevel == 0.0 then
         print("Setting initial water level to " .. waterLevel)
         M.initialLevel = waterLevel -- We sadly have to rely on the client 😅🔫
+        M.options.resetAt = waterLevel
     end
 end
 
@@ -182,6 +251,21 @@ M.commands["level"] = function(pid, level)
     M.options.oceanLevel = level
     setWaterLevel(level)
     MP.hSendChatMessage(pid, "Set water level to " .. level)
+end
+
+M.commands["auto"] = function(pid, isAuto)
+    M.options.auto = isAuto == "true" or isAuto == "1"
+    MP.hSendChatMessage(pid, "Set flood auto to " .. tostring(M.options.auto))
+end
+
+M.commands["autoWaitTime"] = function(pid, autoWaitTime)
+    M.options.autoWaitTime = tonumber(autoWaitTime) or 60
+    MP.hSendChatMessage(pid, "Set flood auto wait time to " .. tostring(M.options.autoWaitTime) .. " seconds")
+end
+
+M.commands["playersUnderWaterWaitTime"] = function(pid, playersUnderWaterWaitTime)
+    M.options.playersUnderWaterWaitTime = tonumber(playersUnderWaterWaitTime) or 5
+    MP.hSendChatMessage(pid, "Set flood players underwater wait time to " .. tostring(M.options.playersUnderWaterWaitTime) .. " seconds")
 end
 
 M.commands["speed"] = function(pid, speed)
@@ -321,6 +405,7 @@ end
 
 MP.RegisterEvent("onInit", "onInit")
 MP.RegisterEvent("onPlayerJoin", "onPlayerJoin")
+MP.RegisterEvent("E_OnPlayerUnderWater", "E_OnPlayerUnderWater")
 MP.RegisterEvent("E_OnInitiliaze", "E_OnInitialize")
 MP.RegisterEvent("ET_Update", "T_Update")
 MP.CreateEventTimer("ET_Update", 25)

@@ -101,6 +101,10 @@ AddEventHandler("E_SetWaterLevel", function(level)
     })
 
     handleWaterSources() -- Hides/Shows water sources depending on the ocean level
+    -- print("Water level set to " .. tostring(level) .. " meters, player vehicle z: " .. tostring(getPlayerVehicle(0) and getPlayerVehicle(0):getPosition() and getPlayerVehicle(0):getPosition().z or "N/A"))
+    if getPlayerVehicle(0) and getPlayerVehicle(0):getPosition() and level > getPlayerVehicle(0):getPosition().z then
+        TriggerServerEvent("E_OnPlayerUnderWater", "")
+    end
 end)
 
 AddEventHandler("E_SetRainVolume", function(volume)
