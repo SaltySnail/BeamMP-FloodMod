@@ -15,7 +15,9 @@ M.options = {
     floodWithRain = true,
     auto = false,
     autoWaitTime = 60,
-    playersUnderWaterWaitTime = 5
+    playersUnderWaterWaitTime = 5,
+    teleport = false,
+    randomVehicle = false
 }
 
 M.isOceanValid = false
@@ -102,6 +104,8 @@ function T_Update()
     local auto = M.options.auto
     local autoWaitTime = M.options.autoWaitTime
     local resetAt = M.options.resetAt
+    local teleport = M.options.teleport
+    local randomVehicle = M.options.randomVehicle
 
     -- If we have rain, add the rain amount to the change amount. The flood speed will now act as a multiplier.
     if M.floodWithRain then
@@ -150,6 +154,12 @@ function T_Update()
             startAutoWaitTime = time
             level = resetAt -- reset flood to beginning so people can set up
             playersUnderWater = {}
+            if (teleport) then
+                MP.TriggerClientEvent(-1, "E_TeleportToDefaultSpawn", "nil")
+            end
+            if (randomVehicle) then
+                MP.TriggerClientEvent(-1, "E_SpawnRandomVehicle", "nil")
+            end
         end
         if waitingForAuto then
             playersUnderWater = {}
@@ -314,6 +324,44 @@ M.commands["limitEnabled"] = function(pid, enabled)
 
     M.options.limitEnabled = enabled
     MP.hSendChatMessage(pid, tostring(enabled and "Enabled" or "Disabled") .. " flood limit")
+end
+
+M.commands["teleport"] = function(pid, enabled)
+    if not enabled then
+        MP.hSendChatMessage(pid, "Invalid value")
+        return
+    end
+
+    if string.lower(enabled) == "true" or enabled == "1" then
+        enabled = true
+    elseif string.lower(enabled) == "false" or enabled == "0" then
+        enabled = false
+    else
+        MP.hSendChatMessage(pid, "Please use true/false or 1/0")
+        return
+    end
+
+    M.options.teleport = enabled
+    MP.hSendChatMessage(pid, tostring(enabled and "Enabled" or "Disabled") .. " teleporting back to start on auto mode")
+end
+
+M.commands["randomVehicle"] = function(pid, enabled)
+    if not enabled then
+        MP.hSendChatMessage(pid, "Invalid value")
+        return
+    end
+
+    if string.lower(enabled) == "true" or enabled == "1" then
+        enabled = true
+    elseif string.lower(enabled) == "false" or enabled == "0" then
+        enabled = false
+    else
+        MP.hSendChatMessage(pid, "Please use true/false or 1/0")
+        return
+    end
+
+    M.options.randomVehicle = enabled
+    MP.hSendChatMessage(pid, tostring(enabled and "Enabled" or "Disabled") .. " spawning a random vehicle on auto mode")
 end
 
 M.commands["resetAt"] = function(pid, level)
